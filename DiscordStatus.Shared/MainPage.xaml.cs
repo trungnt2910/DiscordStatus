@@ -21,6 +21,9 @@ using System.Text;
 using System.Net.WebSockets;
 using Timer = System.Timers.Timer;
 using System.Threading.Tasks;
+using System.Net.Http;
+using System.Collections.ObjectModel;
+using Windows.UI.Xaml.Media.Imaging;
 
 // The Blank Page item template is documented at http://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -31,9 +34,25 @@ namespace DiscordStatus
     /// </summary>
     public sealed partial class MainPage : Page
     {
+        public bool _assetsEnabled = true;
+        public bool AssetsEnabled 
+        {
+            get => _assetsEnabled;
+            set
+            {
+                _assetsEnabled = value;
+                Assets.IsEnabled = value;
+            }
+        }
+
+        public ObservableCollection<Asset> AssetCollection { get; set; } = new ObservableCollection<Asset>();
+
         private ClientWebSocket _client;
         private Timer _timer;
         private string _sessionId;
+        private int? _seq;
+        private CancellationTokenSource _cts;
+        private Task _loopTask;
 
         public MainPage()
         {
@@ -51,9 +70,13 @@ namespace DiscordStatus
                 Debug.WriteLine("Starting client...");
                 _client?.Dispose();
                 _timer?.Stop();
+                _cts?.Cancel();
+                _cts?.Dispose();
+                _cts = null;
                 _client = new ClientWebSocket();
                 await _client.ConnectAsync(new Uri("wss://gateway.discord.gg/?v=6&encoding=json"), CancellationToken.None);
-                _ = WebSocketLoop();
+                _cts = new CancellationTokenSource();
+                _loopTask = WebSocketLoop(_cts.Token);
                 var token = AuthTokenBox.Text;
                 var activityName = ActivityNameBox.Text;
                 var isOnMobile = IsOnMobileCheck.IsChecked ?? false;
@@ -76,13 +99,25 @@ namespace DiscordStatus
                         presence = new
                         {
                             activities = new object[]
+                            {
+                                _assetsEnabled ?
+                                (object)new
                                 {
+                                    name = activityName,
+                                    type = (int)activityType,
+                                    application_id = ApplicationIdBox.Text,
+                                    assets = new
+                                    {
+                                        large_image = ApplicationImageBox.Text,
+                                        large_text = activityName
+                                    }
+                                } :
                                 new
                                 {
                                     name = activityName,
-                                    type = activityType,
+                                    type = (int)activityType
                                 }
-                                },
+                            },
                             status = "online",
                             afk = false
                         }
@@ -110,10 +145,22 @@ namespace DiscordStatus
                     since = DateTimeOffset.Now.ToUnixTimeMilliseconds(),
                     activities = new object[]
                     {
-                        new
+                        _assetsEnabled ?
+                        (object)new
                         {
                             name = activityName,
                             type = (int)activityType,
+                            application_id = ApplicationIdBox.Text,
+                            assets = new
+                            {
+                                large_image = ApplicationImageBox.Text,
+                                large_text = activityName
+                            }
+                        } : 
+                        new
+                        {
+                            name = activityName,
+                            type = (int)activityType
                         }
                     },
                     status = "online",
@@ -125,51 +172,124 @@ namespace DiscordStatus
             await _client.SendAsync(Encoding.UTF8.GetBytes(data), WebSocketMessageType.Text, true, CancellationToken.None);
         }
 
-        private async Task WebSocketLoop()
+        private async Task ReconnectAsync()
         {
-            var buffer = new byte[1024 * 4];
-            var memoryStream = new MemoryStream();
-
-            var result = await _client.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
-            while (!result.CloseStatus.HasValue)
+            try
             {
-                memoryStream.Write(buffer, 0, result.Count);
-                if (result.EndOfMessage)
+                _client?.Dispose();
+                _cts?.Cancel();
+                _cts?.Dispose();
+                _cts = null;
+                if (_loopTask != null)
                 {
-                    memoryStream.Seek(0, SeekOrigin.Begin);
-                    var reader = new StreamReader(memoryStream);
-                    var text = await reader.ReadToEndAsync();
-
-                    MessageReceived(text);
-
-                    reader.Dispose();
-                    memoryStream.Dispose();
-                    memoryStream = new MemoryStream();
+                    try
+                    {
+                        await _loopTask;
+                    }
+                    catch
+                    {
+                        // This is a dead task, swallow every exception here.
+                    }
                 }
-                result = await _client.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                _client = new ClientWebSocket();
+                _cts = new CancellationTokenSource();
+                await _client.ConnectAsync(new Uri("wss://gateway.discord.gg/?v=6&encoding=json"), CancellationToken.None);
+                _loopTask = WebSocketLoop(_cts.Token);
+                var token = AuthTokenBox.Text;
+                var activityName = ActivityNameBox.Text;
+                var isOnMobile = IsOnMobileCheck.IsChecked ?? false;
+                var activityType = (DiscordActivityType)ActivityTypeBox.SelectedItem;
+                var payload = new
+                {
+                    op = 6,
+                    d = new
+                    {
+                        token = token,
+                        session_id = _sessionId,
+                        seq = _seq
+                    }
+                };
+                var data = JsonConvert.SerializeObject(payload);
+                Debug.WriteLine("Sending resume payload");
+                await _client.SendAsync(Encoding.UTF8.GetBytes(data), WebSocketMessageType.Text, true, CancellationToken.None);
             }
-            await _client.CloseAsync(result.CloseStatus.Value, result.CloseStatusDescription, CancellationToken.None);
-            memoryStream.Dispose();
+            catch (Exception e)
+            {
+                Console.WriteLine(e);
+            }
+        }
+
+        private async Task WebSocketLoop(CancellationToken ct)
+        {
+            try
+            {
+                var buffer = new byte[1024 * 4];
+                var memoryStream = new MemoryStream();
+
+                var result = await _client.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                while (!result.CloseStatus.HasValue)
+                {
+                    if (ct.IsCancellationRequested)
+                    {
+                        return;
+                    }
+                    memoryStream.Write(buffer, 0, result.Count);
+                    if (result.EndOfMessage)
+                    {
+                        memoryStream.Seek(0, SeekOrigin.Begin);
+                        var reader = new StreamReader(memoryStream);
+                        var text = await reader.ReadToEndAsync();
+
+                        MessageReceived(text);
+
+                        reader.Dispose();
+                        memoryStream.Dispose();
+                        memoryStream = new MemoryStream();
+                    }
+                    result = await _client.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                }
+                await _client.CloseAsync(result.CloseStatus.Value, result.CloseStatusDescription, CancellationToken.None);
+                memoryStream.Dispose();
+            }
+            catch (ObjectDisposedException e)
+            {
+                Debug.WriteLine(e);
+            }
         }
 
         private void MessageReceived(string message)
         {
-            //Debug.WriteLine(message.Text);
+            if (string.IsNullOrEmpty(message))
+            {
+                return;
+            }
+
+            Debug.WriteLine(message);
+            Console.WriteLine(message);
             var payload = JsonConvert.DeserializeObject<JObject>(message);
 
-            var op = payload.Value<int>("op");
+            var op = payload.Value<int?>("op");
             var t = payload.Value<string>("t");
             var d = payload["d"];
+            var s = payload.Value<int?>("s");
+
+            _seq = s ?? _seq;
 
             switch (op)
             {
+                case 9:
+                {
+                    Console.WriteLine("Invalid session.");
+                    StartButton_Click(null, null);
+                }
+                break;
                 case 10:
                     Debug.WriteLine(message);
                     var heartbeatInterval = d.Value<int>("heartbeat_interval");
                     Debug.WriteLine($"[Debug]: Channel connected to WebSocket, pinging every {heartbeatInterval} ms");
                     _timer?.Stop();
                     _timer = Heartbeat(heartbeatInterval);
-                    break;
+                break;
             }
 
             switch (t)
@@ -177,7 +297,7 @@ namespace DiscordStatus
                 case "READY":
                 {
                     _sessionId = d.Value<string>("session_id");
-                    System.Diagnostics.Debug.WriteLine(_sessionId);
+                    Debug.WriteLine(_sessionId);
                 }
                 break;
             }
@@ -189,12 +309,75 @@ namespace DiscordStatus
             timer.Elapsed += async (sender, args) =>
             {
                 Debug.WriteLine("Ping.");
-                await _client.SendAsync(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new { op = 1, d = (string)null })), WebSocketMessageType.Text, true, CancellationToken.None);
+                Console.WriteLine("Ping.");
+                try
+                {
+                    await _client.SendAsync(Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(new { op = 1, d = _seq })), WebSocketMessageType.Text, true, CancellationToken.None);
+                }
+                catch (InvalidOperationException)
+                {
+                    Console.WriteLine("Attempting to reconnect.");
+                    await ReconnectAsync();
+                }
             };
             timer.AutoReset = true;
             timer.Enabled = true;
             timer.Start();
             return timer;
+        }
+
+        private async void SearchAssetsButton_Click(object sender, RoutedEventArgs args)
+        {
+            var client = new HttpClient();
+
+            var id = ApplicationIdBox.Text;
+#if __WASM__
+            var message = new HttpRequestMessage(HttpMethod.Get,
+                          $"https://cors.bridged.cc/https://discord.com/api/v9/oauth2/applications/{id}/assets");
+#else
+            var message = new HttpRequestMessage(HttpMethod.Get, 
+                          $"https://discord.com/api/v9/oauth2/applications/{id}/assets");
+#endif
+
+            var response = await client.SendAsync(message);
+            response.EnsureSuccessStatusCode();
+
+            var json = await response.Content.ReadAsStringAsync();
+
+            Debug.WriteLine(json);
+
+            var list = JsonConvert.DeserializeObject<List<Asset>>(json);
+            AssetCollection.Clear();
+            foreach (var l in list)
+            {
+                AssetCollection.Add(l);
+            }
+            foreach (var asset in AssetCollection)
+            {
+                Debug.WriteLine(asset);
+            }
+            SelectAssetBox.IsEnabled = true;
+        }
+
+        private void ApplicationIdBox_TextChanged(object sender, TextChangedEventArgs args)
+        {
+            SelectAssetBox.IsEnabled = false;
+        }
+
+        private void ApplicationImageBox_TextChanged(object sender, TextChangedEventArgs args)
+        {
+            var appId = ApplicationIdBox.Text;
+            var imageId = ApplicationImageBox.Text;
+            // Images are immune to CORS
+            AssetPreviewImage.Source = new BitmapImage(
+                new Uri($"https://cdn.discordapp.com/app-assets/{appId}/{imageId}.png?size=512"));
+            AssetPreviewImage.Visibility = Visibility.Visible;
+        }
+
+        private void SelectAssetBox_SelectionChanged(object sender, SelectionChangedEventArgs args)
+        {
+            var item = SelectAssetBox.SelectedItem as Asset;
+            ApplicationImageBox.Text = item.ID;
         }
     }
 }

@@ -7,12 +7,35 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <StackPanel>
-        <TextBox x:Name="AuthTokenBox" PlaceholderText="Authorization Token"/>
-        <ComboBox x:Name="ActivityTypeBox" PlaceholderText="Activity Type"/>
-        <TextBox x:Name="ActivityNameBox" PlaceholderText="Activity Name"/>
-        <CheckBox x:Name="IsOnMobileCheck" Content="Use Mobile client"/>
-        <Button x:Name="UpdateButton" Click="UpdateButton_Click" Content="Update Presence"/>
-        <Button x:Name="StartButton" Click="StartButton_Click" Content="Start new session"/>
-    </StackPanel>
+    <ScrollViewer>
+        <StackPanel>
+            <TextBox x:Name="AuthTokenBox" PlaceholderText="Authorization Token"/>
+            <ComboBox x:Name="ActivityTypeBox" PlaceholderText="Activity Type"/>
+            <TextBox x:Name="ActivityNameBox" PlaceholderText="Activity Name"/>
+            <StackPanel BorderThickness="1"
+                    BorderBrush="Black"
+                    Margin="0,10,0,10">
+                <CheckBox x:Name="UseAssetsCheck" Content="Use Assets" IsChecked="{x:Bind AssetsEnabled,Mode=TwoWay}"/>
+                <ContentControl x:Name="Assets"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Stretch"
+                    IsEnabled="{x:Bind AssetsEnabled,Mode=OneWay}">
+                    <StackPanel HorizontalAlignment="Stretch">
+                        <TextBox x:Name="ApplicationIdBox" PlaceholderText="Application ID" HorizontalAlignment="Stretch" TextChanged="ApplicationIdBox_TextChanged"/>
+                        <Button x:Name="SearchAssetsButton" Content="Search Assets" Click="SearchAssetsButton_Click"/>
+                        <ComboBox x:Name="SelectAssetBox" PlaceholderText="Select asset" IsEnabled="false" ItemsSource="{x:Bind AssetCollection,Mode=OneWay}" SelectionChanged="SelectAssetBox_SelectionChanged"/>
+                        <TextBox x:Name="ApplicationImageBox" PlaceholderText="Application Image" HorizontalAlignment="Stretch"
+                      TextChanged="ApplicationImageBox_TextChanged"/>
+                        <Grid Width="128" Height="128">
+                            <TextBlock Text="Preview" HorizontalTextAlignment="Center" TextAlignment="Center"/>
+                            <Image x:Name="AssetPreviewImage" Visibility="Collapsed"/>
+                        </Grid>
+                    </StackPanel>
+                </ContentControl>
+            </StackPanel>
+            <CheckBox x:Name="IsOnMobileCheck" Content="Use Mobile client"/>
+            <Button x:Name="UpdateButton" Click="UpdateButton_Click" Content="Update Presence"/>
+            <Button x:Name="StartButton" Click="StartButton_Click" Content="Start new session"/>
+        </StackPanel>
+    </ScrollViewer>
 </Page>
