@@ -1,0 +1,21 @@
+﻿<ContentDialog
+    x:Class="DiscordStatus.CreateApplicationDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:DiscordStatus"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    Title="Create Application"
+    PrimaryButtonText="Create"
+    SecondaryButtonText="Cancel"
+    PrimaryButtonClick="ContentDialog_PrimaryButtonClick"
+    SecondaryButtonClick="ContentDialog_SecondaryButtonClick">
+
+    <StackPanel>
+        <TextBox x:Name="NameBox" PlaceholderText="Name"/>
+        <TextBlock>
+            <Hyperlink Click="Hyperlink_Click">
+                By creating an API application, you agree to the Discord API Terms of Service.
+            </Hyperlink>
+        </TextBlock>
+    </StackPanel>
+</ContentDialog>

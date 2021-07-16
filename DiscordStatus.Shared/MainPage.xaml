@@ -21,8 +21,27 @@
                     HorizontalContentAlignment="Stretch"
                     IsEnabled="{x:Bind AssetsEnabled,Mode=OneWay}">
                     <StackPanel HorizontalAlignment="Stretch">
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button x:Name="SearchApplicationButton" 
+                                    Content="Search your Applications"
+                                    Click="SearchApplicationButton_Click"/>
+                            <Button x:Name="CreateApplicationButton"
+                                    Content="Create a new Application"
+                                    Click="CreateApplicationButton_Click"/>
+                            <Button x:Name="DeleteApplicationButton"
+                                    Content="Delete selected Application"
+                                    Click="DeleteApplicationButton_Click"/>
+                        </StackPanel>
+                        <ComboBox x:Name="SelectApplicationBox" 
+                                  PlaceholderText="Select your Application" 
+                                  IsEnabled="False"
+                                  ItemsSource="{x:Bind ApplicationCollection,Mode=OneWay}"
+                                  SelectionChanged="SelectApplicationBox_SelectionChanged"/>
                         <TextBox x:Name="ApplicationIdBox" PlaceholderText="Application ID" HorizontalAlignment="Stretch" TextChanged="ApplicationIdBox_TextChanged"/>
-                        <Button x:Name="SearchAssetsButton" Content="Search Assets" Click="SearchAssetsButton_Click"/>
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <Button x:Name="SearchAssetsButton" Content="Search Assets" Click="SearchAssetsButton_Click"/>
+                            <Button x:Name="CreateAssetButton" Content="Create a new Asset" Click="CreateAssetButton_Click"/>
+                        </StackPanel>
                         <ComboBox x:Name="SelectAssetBox" PlaceholderText="Select asset" IsEnabled="false" ItemsSource="{x:Bind AssetCollection,Mode=OneWay}" SelectionChanged="SelectAssetBox_SelectionChanged"/>
                         <TextBox x:Name="ApplicationImageBox" PlaceholderText="Application Image" HorizontalAlignment="Stretch"
                       TextChanged="ApplicationImageBox_TextChanged"/>

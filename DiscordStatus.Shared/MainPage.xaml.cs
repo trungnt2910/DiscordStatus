@@ -24,6 +24,7 @@ using System.Threading.Tasks;
 using System.Net.Http;
 using System.Collections.ObjectModel;
 using Windows.UI.Xaml.Media.Imaging;
+using Windows.UI.Popups;
 
 // The Blank Page item template is documented at http://go.microsoft.com/fwlink/?LinkId=402352&clcid=0x409
 
@@ -46,6 +47,7 @@ namespace DiscordStatus
         }
 
         public ObservableCollection<Asset> AssetCollection { get; set; } = new ObservableCollection<Asset>();
+        public ObservableCollection<DiscordApplication> ApplicationCollection { get; set; } = new ObservableCollection<DiscordApplication>();
 
         private ClientWebSocket _client;
         private Timer _timer;
@@ -53,6 +55,7 @@ namespace DiscordStatus
         private int? _seq;
         private CancellationTokenSource _cts;
         private Task _loopTask;
+        private HttpClient _httpClient = new HttpClient();
 
         public MainPage()
         {
@@ -331,13 +334,8 @@ namespace DiscordStatus
             var client = new HttpClient();
 
             var id = ApplicationIdBox.Text;
-#if __WASM__
-            var message = new HttpRequestMessage(HttpMethod.Get,
-                          $"https://cors.bridged.cc/https://discord.com/api/v9/oauth2/applications/{id}/assets");
-#else
-            var message = new HttpRequestMessage(HttpMethod.Get, 
-                          $"https://discord.com/api/v9/oauth2/applications/{id}/assets");
-#endif
+            Debug.WriteLine($"https://discord.com/api/v9/oauth2/applications/{id}/assets");
+            var message = Helpers.CreateHttpRequestMessage(HttpMethod.Get, $"https://discord.com/api/v9/oauth2/applications/{id}/assets");
 
             var response = await client.SendAsync(message);
             response.EnsureSuccessStatusCode();
@@ -377,7 +375,75 @@ namespace DiscordStatus
         private void SelectAssetBox_SelectionChanged(object sender, SelectionChangedEventArgs args)
         {
             var item = SelectAssetBox.SelectedItem as Asset;
-            ApplicationImageBox.Text = item.ID;
+            ApplicationImageBox.Text = item?.ID;
+        }
+
+        private async void SearchApplicationButton_Click(object sender, RoutedEventArgs args)
+        {
+            var message = Helpers.CreateHttpRequestMessage(HttpMethod.Get, "https://discord.com/api/v9/applications?with_team_applications=true");
+            var token = AuthTokenBox.Text;
+            message.Headers.Authorization = System.Net.Http.Headers.AuthenticationHeaderValue.Parse(token);
+
+            var response = await _httpClient.SendAsync(message);
+
+            var json = await response.Content.ReadAsStringAsync();
+            var arr = JsonConvert.DeserializeObject<List<DiscordApplication>>(json);
+
+            ApplicationCollection.Clear();
+
+            foreach (var app in arr)
+            {
+                ApplicationCollection.Add(app);
+            }
+
+            SelectApplicationBox.IsEnabled = true;
+        }
+
+        private void SelectApplicationBox_SelectionChanged(object sender, SelectionChangedEventArgs args)
+        {
+            ApplicationIdBox.Text = (SelectApplicationBox.SelectedItem as DiscordApplication)?.ID ?? string.Empty;
+        }
+
+        private async void CreateApplicationButton_Click(object sender, RoutedEventArgs args)
+        {
+            var dialog = new CreateApplicationDialog(AuthTokenBox.Text);
+            await dialog.ShowAsync();
+
+            var application = dialog.Application;
+            if (application != null)
+            {
+                ApplicationCollection.Add(application);
+                SelectApplicationBox.SelectedIndex = ApplicationCollection.Count - 1;
+            }
+        }
+
+        private async void CreateAssetButton_Click(object sender, RoutedEventArgs args)
+        {
+            var dialog = new CreateAssetDialog(ApplicationIdBox.Text, AuthTokenBox.Text);
+            await dialog.ShowAsync();
+
+            var asset = dialog.Asset;
+            if (asset != null)
+            {
+                AssetCollection.Add(asset);
+                SelectAssetBox.SelectedIndex = AssetCollection.Count - 1;
+            }
+        }
+
+        private async void DeleteApplicationButton_Click(object sender, RoutedEventArgs args)
+        {
+            var application = SelectApplicationBox.SelectedItem as DiscordApplication;
+            if (application == null)
+            {
+                var dialog = new MessageDialog("Select an application first!");
+                await dialog.ShowAsync();
+            }
+            else
+            {
+                var dialog = new DeleteApplicationDialog(application, AuthTokenBox.Text);
+                await dialog.ShowAsync();
+            }
+            SearchApplicationButton_Click(null, null);
         }
     }
 }
